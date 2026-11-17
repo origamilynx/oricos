@@ -108,18 +108,20 @@ async function login(){
   const u=$('u').value,p=$('p').value;
   if(!u||!p){$('err').textContent='กรอกให้ครบ';return}
   $('go').disabled=true;
+  let d;
   try{
     const data=await (await fetch('data.json',{cache:'no-store'})).json();
     const rec=data[await uid(u)];
     if(!rec)throw 0;
     const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:unb64(rec.iv)},await key(u,p),unb64(rec.ct));
-    const d=JSON.parse(dec.decode(pt));d.admin?showAdmin(d):show(d);
+    d=JSON.parse(dec.decode(pt));
   }catch(e){$('err').textContent='Username หรือ Password ไม่ถูกต้อง'}
+  if(d){try{d.admin?showAdmin(d):show(d)}catch(e){logout();$('err').textContent='แสดงผลไม่สำเร็จ: '+e.message}}
   $('go').disabled=false;
 }
 
 function show(d){
-  const sessions=(d.sessions||[]).length,pays=d.payments||[];
+  d=clean(d);const sessions=d.sessions.length,pays=d.payments;
   const ss=perSession(d),unpaid=ss.filter(x=>x.owed>0).map(x=>fmt(x.date)).join(', ');
   const total=pays.reduce((s,x)=>s+x.amount,0),owed=sessions*d.rate-total;
   $('vName').textContent=d.name;
@@ -154,6 +156,15 @@ function show(d){
 
 const calc=p=>{const paid=p.payments.reduce((t,x)=>t+x.amount,0);return{paid,owed:p.sessions.length*p.rate-paid}};
 const money=n=>'฿'+baht(n);
+const num=v=>{const n=parseFloat(String(v==null?'':v).replace(/[^\d.\-]/g,''));return isFinite(n)?n:NaN};
+function clean(p,issues){
+  const nm=p.name||p.username||'?',bad=m=>issues&&issues.push(nm+': '+m);
+  let rate=num(p.rate);if(!(rate>=0)){bad('ค่าเล่นต่อเซสชัน (rate) ไม่ถูกต้อง '+JSON.stringify(p.rate)+' → นับเป็น 0');rate=0}
+  const ss=Array.isArray(p.sessions)?p.sessions:(bad('ไม่มีรายการเซสชัน'),[]);
+  const pays=(Array.isArray(p.payments)?p.payments:(bad('ไม่มีรายการจ่ายเงิน'),[])).map(x=>{
+    const a=num(x&&x.amount);if(isNaN(a)){bad('ยอดจ่ายไม่ถูกต้อง '+JSON.stringify(x)+' → นับเป็น 0');return{...x,amount:0}}return{...x,amount:a}});
+  return{...p,rate,sessions:ss,payments:pays};
+}
 // ตัดยอดที่จ่ายไปปิดเซสชันเก่าสุดก่อน
 const perSession=p=>{let left=(p.payments||[]).reduce((t,x)=>t+x.amount,0);
   return [...(p.sessions||[])].sort().map(date=>{const paid=Math.min(left,p.rate);left-=paid;return{date,paid,owed:p.rate-paid}})};
@@ -161,7 +172,7 @@ function showAdmin(d){
   $('login').classList.add('hide');$('dash').classList.remove('hide');
   document.querySelector('main').style.maxWidth='640px';
   const h=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e};
-  const P=d.players.map(p=>({...p,sessions:[...p.sessions].sort(),...calc(p)}));
+  const issues=[],P=d.players.map(p=>{const c=clean(p,issues);return{...c,sessions:[...c.sessions].sort(),...calc(c)}});
   const sum=f=>P.reduce((t,p)=>t+f(p),0);
   const root=$('dashBody');root.innerHTML='';
   const grid=h('div','kpis');
@@ -169,6 +180,8 @@ function showAdmin(d){
    ['ผู้เล่นที่ค้าง',P.filter(p=>p.owed>0).length+' / '+P.length,''],['การจ่ายทั้งหมด',sum(p=>p.payments.length)+' ครั้ง','']]
   .forEach(([l,v,c])=>{const k=h('div','kpi');k.append(h('b',c,v),h('span',null,l));grid.append(k)});
   root.append(grid);
+  if(issues.length){const w=h('div','card');w.append(h('h3','owe','⚠ พบข้อมูลผิดปกติ — แก้ใน admin.html แล้วสร้าง data.json ใหม่'));
+    issues.forEach(m=>w.append(h('small',null,m)));root.append(w)}
   [...new Set(P.map(p=>p.table))].forEach(tn=>{
     const ps=P.filter(p=>p.table===tn).sort((a,b)=>b.owed-a.owed);
     const sess=new Set(ps.flatMap(p=>p.sessions)).size;
