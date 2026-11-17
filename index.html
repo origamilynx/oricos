@@ -123,7 +123,7 @@ async function login(){
 function show(d){
   d=clean(d);const sessions=d.sessions.length,pays=d.payments;
   const ss=perSession(d),unpaid=ss.filter(x=>x.owed>0).map(x=>fmt(x.date)).join(', ');
-  const total=pays.reduce((s,x)=>s+x.amount,0),owed=sessions*d.rate-total;
+  const total=pays.reduce((s,x)=>s+x.amount,0),disc=pays.reduce((s,x)=>s+(x.discount||0),0),owed=sessions*d.rate-total-disc;
   $('vName').textContent=d.name;
   $('vTable').textContent=d.table+' · ฿'+d.rate+'/เซสชัน';
   const st=$('vStatus');
@@ -131,7 +131,7 @@ function show(d){
   st.innerHTML=owed>0?'<span>ยอดค้างชำระ</span><b>฿'+baht(owed)+'</b><small>ค้างเซสชัน: '+unpaid+'</small>':
     '<span>สถานะ</span><b>ชำระครบแล้ว</b>'+(owed<0?'<small>จ่ายล่วงหน้า ฿'+baht(-owed)+'</small>':'');
   $('vSess').textContent=sessions;
-  $('vCount').textContent=pays.length;
+  $('vCount').textContent=pays.filter(x=>x.amount>0).length;
   $('vTotal').textContent=baht(total);
   const sl=$('vSessList');sl.innerHTML='';
   if(!ss.length)sl.innerHTML='<li><span>ยังไม่มีเซสชัน</span></li>';
@@ -148,13 +148,15 @@ function show(d){
     const li=document.createElement('li');
     li.innerHTML='<span></span><span></span>';
     li.children[0].textContent=fmt(x.date);
-    li.children[1].textContent='฿'+baht(x.amount);
+    li.children[1].textContent=payAmt(x);
     l.appendChild(li);
   });
   $('login').classList.add('hide');$('view').classList.remove('hide');
 }
 
-const calc=p=>{const paid=p.payments.reduce((t,x)=>t+x.amount,0);return{paid,owed:p.sessions.length*p.rate-paid}};
+const calc=p=>{const paid=p.payments.reduce((t,x)=>t+x.amount,0),disc=p.payments.reduce((t,x)=>t+(x.discount||0),0);return{paid,disc,owed:p.sessions.length*p.rate-paid-disc}};
+const payAmt=x=>(x.amount>0?'฿'+baht(x.amount):'')+(x.discount?(x.amount>0?' + ':'')+'ส่วนลด ฿'+baht(x.discount):'')+(x.note?' · '+x.note:'');
+const nPaid=p=>p.payments.filter(x=>x.amount>0).length;
 const money=n=>'฿'+baht(n);
 const num=v=>{const n=parseFloat(String(v==null?'':v).replace(/[^\d.\-]/g,''));return isFinite(n)?n:NaN};
 function clean(p,issues){
@@ -162,12 +164,21 @@ function clean(p,issues){
   let rate=num(p.rate);if(!(rate>=0)){bad('ค่าเล่นต่อเซสชัน (rate) ไม่ถูกต้อง '+JSON.stringify(p.rate)+' → นับเป็น 0');rate=0}
   const ss=Array.isArray(p.sessions)?p.sessions:(bad('ไม่มีรายการเซสชัน'),[]);
   const pays=(Array.isArray(p.payments)?p.payments:(bad('ไม่มีรายการจ่ายเงิน'),[])).map(x=>{
-    const a=num(x&&x.amount);if(isNaN(a)){bad('ยอดจ่ายไม่ถูกต้อง '+JSON.stringify(x)+' → นับเป็น 0');return{...x,amount:0}}return{...x,amount:a}});
+    if(typeof x==='string')return{date:x,for:x,amount:rate,discount:0};
+    const dsc=num(x&&x.discount)||0,a=(x&&x.amount==null)?0:num(x&&x.amount);
+    if(isNaN(a)||(x&&x.amount==null&&!dsc)){bad('ยอดจ่ายไม่ถูกต้อง '+JSON.stringify(x)+' → นับเป็น 0');return{...x,amount:0,discount:dsc}}
+    return{...x,amount:a,discount:dsc}});
   return{...p,rate,sessions:ss,payments:pays};
 }
 // ตัดยอดที่จ่ายไปปิดเซสชันเก่าสุดก่อน
-const perSession=p=>{let left=(p.payments||[]).reduce((t,x)=>t+x.amount,0);
-  return [...(p.sessions||[])].sort().map(date=>{const paid=Math.min(left,p.rate);left-=paid;return{date,paid,owed:p.rate-paid}})};
+// จ่ายระบุวันที่ (for) ตัดเซสชันนั้นตรงๆ ส่วนที่เหลือตัดเซสชันเก่าสุดก่อน
+const perSession=p=>{const pays=p.payments||[],direct={};
+  pays.forEach(x=>{if(x.for)direct[x.for]=(direct[x.for]||0)+x.amount+(x.discount||0)});
+  let left=pays.filter(x=>!x.for).reduce((t,x)=>t+x.amount+(x.discount||0),0);
+  return [...(p.sessions||[])].sort().map(date=>{
+    let paid=Math.min(direct[date]||0,p.rate);
+    const take=Math.min(left,p.rate-paid);paid+=take;left-=take;
+    return{date,paid,owed:p.rate-paid}})};
 function showAdmin(d){
   $('login').classList.add('hide');$('dash').classList.remove('hide');
   document.querySelector('main').style.maxWidth='640px';
@@ -177,7 +188,7 @@ function showAdmin(d){
   const root=$('dashBody');root.innerHTML='';
   const grid=h('div','kpis');
   [['เก็บแล้วรวม',money(sum(p=>p.paid)),'ok'],['ยอดค้างรวม',money(sum(p=>Math.max(p.owed,0))),'owe'],
-   ['ผู้เล่นที่ค้าง',P.filter(p=>p.owed>0).length+' / '+P.length,''],['การจ่ายทั้งหมด',sum(p=>p.payments.length)+' ครั้ง','']]
+   ['ผู้เล่นที่ค้าง',P.filter(p=>p.owed>0).length+' / '+P.length,''],['การจ่ายทั้งหมด',sum(nPaid)+' ครั้ง','']]
   .forEach(([l,v,c])=>{const k=h('div','kpi');k.append(h('b',c,v),h('span',null,l));grid.append(k)});
   root.append(grid);
   if(issues.length){const w=h('div','card');w.append(h('h3','owe','⚠ พบข้อมูลผิดปกติ — แก้ใน admin.html แล้วสร้าง data.json ใหม่'));
@@ -197,11 +208,11 @@ function showAdmin(d){
       const bd=h('span',p.owed>0?'owe':'ok',p.owed>0?'ค้าง '+money(p.owed):p.owed<0?'ล่วงหน้า '+money(-p.owed):'ครบ');
       bd.style.float='right';
       sm.append(h('b',null,p.name),bd);dt.append(sm);
-      dt.append(h('small',null,'เล่น '+p.sessions.length+' เซสชัน · จ่าย '+p.payments.length+' ครั้ง รวม '+money(p.paid)));
+      dt.append(h('small',null,'เล่น '+p.sessions.length+' เซสชัน · จ่าย '+nPaid(p)+' ครั้ง รวม '+money(p.paid)));
       const ss=perSession(p),un=ss.filter(x=>x.owed>0);
       dt.append(h('small',null,'เซสชันที่เล่น: '+(ss.length?ss.map(x=>fmt(x.date)+(x.owed>0?' ✗':' ✓')).join(', '):'-')));
       if(un.length)dt.append(h('small','owe','ขาดชำระ: '+un.map(x=>fmt(x.date)+(x.paid>0?' (ค้าง ฿'+baht(x.owed)+')':'')).join(', ')));
-      dt.append(h('small',null,'การจ่าย: '+(p.payments.length?p.payments.map(x=>fmt(x.date)+' '+money(x.amount)).join(', '):'-')));
+      dt.append(h('small',null,'การจ่าย: '+(p.payments.length?p.payments.map(x=>fmt(x.date)+' '+payAmt(x)).join(', '):'-')));
       c.append(dt);
     });
     root.append(c);
