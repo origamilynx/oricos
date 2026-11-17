@@ -82,24 +82,7 @@ li:last-child{border:0}
   <button class="ghost" id="out2">ออกจากระบบ</button>
 </section>
 
-<section id="admin" class="hide">
-  <div class="card">
-    <h3>เครื่องมือ DM · ใช้บนเครื่องตัวเองเท่านั้น</h3>
-    <p class="sum">บัญชีแอดมิน (ใช้ล็อกอินดูแดชบอร์ดบนเว็บจริง)</p>
-    <div class="row" style="margin-bottom:12px"><input id="au" placeholder="Admin username"><input id="ap" placeholder="Admin password"></div>
-    <input type="file" id="load" accept=".json">
-    <button class="ghost" id="save">ดาวน์โหลดไฟล์ข้อมูลต้นฉบับ (ห้ามอัปโหลดขึ้น GitHub)</button>
-  </div>
-  <div id="tables"></div>
-  <div class="card">
-    <details><summary>แก้ข้อมูลดิบ / เพิ่ม-ลบผู้เล่น (JSON)</summary>
-      <textarea id="src" spellcheck="false"></textarea>
-      <button class="ghost" id="apply">ใช้ข้อมูลนี้</button>
-    </details>
-    <button id="gen">สร้าง data.json (เข้ารหัสแล้ว)</button>
-    <p class="err" id="aerr"></p>
-  </div>
-</section>
+
 </main>
 
 <script>
@@ -199,73 +182,6 @@ $('go').onclick=login;
 $('p').onkeydown=e=>{if(e.key==='Enter')login()};
 $('out').onclick=$('out2').onclick=logout;
 
-addEventListener('hashchange',()=>location.reload());
-/* ---------- DM tool: เปิด index.html#admin บนเครื่องตัวเอง ---------- */
-if(location.hash==='#admin'){
-  $('login').classList.add('hide');$('admin').classList.remove('hide');
-  const today=()=>new Date().toISOString().slice(0,10);
-  const sample=()=>{const T=[["Monday Team",80,["2026-11-02","2026-11-09","2026-11-16"]],["Thursday Team",79,["2026-11-05","2026-11-12"]]],players=[];
-    T.forEach(([table,rate,sessions],t)=>{for(let i=1;i<=5;i++)players.push({username:(t?'thu':'mon')+i,password:'change-me-'+(t?'thu':'mon')+i,name:'ผู้เล่น '+i+' ('+table+')',table,rate,sessions:[...sessions],payments:[]})});
-    return{players,admin:{username:'dm',password:'change-me-admin'}}};
-  const norm2=o=>{if(!o||!Array.isArray(o.players))throw new Error('ต้องมี players');o.players.forEach(p=>{p.sessions=p.sessions||[];p.payments=p.payments||[]});o.admin=o.admin||{username:'',password:''};return o};
-  let S;
-  try{S=norm2(JSON.parse(localStorage.getItem('baroviaSrc')))}catch(e){S=sample()}
-  const dl=(name,txt)=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([txt],{type:'application/json'}));a.download=name;a.click()};
-
-  function render(){
-    try{localStorage.setItem('baroviaSrc',JSON.stringify(S))}catch(e){}
-    $('src').value=JSON.stringify(S,null,1);
-    $('au').value=S.admin.username;$('ap').value=S.admin.password;
-    const box=$('tables');box.innerHTML='';
-    [...new Set(S.players.map(p=>p.table))].forEach(tn=>{
-      const ps=S.players.filter(p=>p.table===tn);
-      const tot=ps.reduce((a,p)=>{const c=calc(p);a.paid+=c.paid;a.owed+=c.owed;return a},{paid:0,owed:0});
-      const d=document.createElement('div');d.className='card';
-      d.innerHTML='<h3></h3><div class="row"><input type="date" class="sd" value="'+today()+'"><button class="add">+ เพิ่มเซสชัน</button></div><p class="sum"></p><div class="pl"></div>';
-      d.querySelector('h3').textContent=tn+' · ฿'+ps[0].rate+'/เซสชัน';
-      d.querySelector('.sum').textContent='เก็บแล้วรวม ฿'+baht(tot.paid)+' · ค้างรวม ฿'+baht(tot.owed)+' · ติ๊กเฉพาะคนที่มาเล่นก่อนกดเพิ่มเซสชัน';
-      const pairs=[];
-      ps.forEach(p=>{
-        const c=calc(p),r=document.createElement('div');r.className='pr';
-        r.innerHTML='<label><input type="checkbox" checked class="ck"><b class="nm"></b></label><small></small><div class="row"><input type="number" class="amt" min="0" placeholder="ยอดที่จ่าย ฿"><button class="pay">บันทึกการจ่าย</button></div>';
-        r.querySelector('.nm').textContent=p.name+' ('+p.username+')';
-        r.querySelector('small').innerHTML='เล่น '+p.sessions.length+' เซสชัน · จ่าย '+p.payments.length+' ครั้ง รวม ฿'+baht(c.paid)+' · '+(c.owed>0?'<span class="owe">ค้าง ฿'+baht(c.owed)+'</span>':'<span class="ok">'+(c.owed<0?'จ่ายล่วงหน้า ฿'+baht(-c.owed):'ชำระครบ')+'</span>');
-        const amt=r.querySelector('.amt');if(c.owed>0)amt.value=c.owed;
-        r.querySelector('.pay').onclick=()=>{const v=+amt.value;if(v>0){p.payments.push({date:today(),amount:v});render()}};
-        pairs.push([r.querySelector('.ck'),p]);
-        d.querySelector('.pl').appendChild(r);
-      });
-      d.querySelector('.add').onclick=()=>{
-        const date=d.querySelector('.sd').value;if(!date)return;
-        pairs.forEach(([ck,p])=>{if(ck.checked&&!p.sessions.includes(date))p.sessions.push(date)});
-        render();
-      };
-      box.appendChild(d);
-    });
-  }
-  render();
-
-  $('load').onchange=async e=>{try{S=norm2(JSON.parse(await e.target.files[0].text()));render();$('aerr').textContent=''}catch(x){$('aerr').style.color='';$('aerr').textContent='ไฟล์ไม่ถูกต้อง: '+x.message}};
-  $('au').oninput=$('ap').oninput=()=>{S.admin={username:$('au').value,password:$('ap').value};try{localStorage.setItem('baroviaSrc',JSON.stringify(S))}catch(e){}};
-  $('save').onclick=()=>dl('players-source.json',JSON.stringify(S,null,1));
-  $('apply').onclick=()=>{try{S=norm2(JSON.parse($('src').value));render();$('aerr').style.color='#9ccf86';$('aerr').textContent='อัปเดตแล้ว'}catch(x){$('aerr').style.color='';$('aerr').textContent='JSON ผิดพลาด: '+x.message}};
-  $('gen').onclick=async()=>{
-    try{
-      const out={},A=S.admin;
-      const seal=async(u,pw,payload)=>{if(/[^\x20-\x7E]/.test(pw))throw new Error('password ของ '+u+' ต้องเป็นอังกฤษ ตัวเลข สัญลักษณ์เท่านั้น');const iv=crypto.getRandomValues(new Uint8Array(12));const ct=await crypto.subtle.encrypt({name:'AES-GCM',iv},await key(u,pw),enc.encode(JSON.stringify(payload)));out[await uid(u)]={iv:b64(iv),ct:b64(ct)}};
-      if(!A.username||!A.password)throw new Error('ต้องตั้ง username/password ของแอดมิน');
-      if(S.players.some(p=>norm(p.username||'')===norm(A.username)))throw new Error('username แอดมินซ้ำกับผู้เล่น');
-      for(const pl of S.players){
-        if(!pl.username||!pl.password)throw new Error('ต้องมี username และ password ทุกคน');
-        const {username,password,...payload}=pl;
-        await seal(username,password,payload);
-      }
-      await seal(A.username,A.password,{admin:true,players:S.players.map(({password,...p})=>p)});
-      dl('data.json',JSON.stringify(out));
-      $('aerr').style.color='#9ccf86';$('aerr').textContent='สร้างแล้ว '+S.players.length+' ผู้เล่น + แอดมิน';
-    }catch(e){$('aerr').style.color='';$('aerr').textContent='ผิดพลาด: '+e.message}
-  };
-}
 </script>
 </body>
 </html>
