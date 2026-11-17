@@ -33,6 +33,17 @@ ul{list-style:none;padding:0;margin:0}
 li{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line)}
 li:last-child{border:0}
 .hide{display:none}
+.row{display:flex;gap:8px;align-items:center}.row input{margin:0}.row button{width:auto;white-space:nowrap;padding:10px 12px}
+.pr{border-top:1px solid var(--line);padding:10px 0}.pr small{display:block;color:var(--mut);margin:4px 0 8px}
+.pr label{display:flex;align-items:center;gap:8px}.pr label input{width:auto;margin:0}
+.sum{color:var(--mut);margin:10px 0;font-size:.9rem}details{margin-bottom:12px}summary{cursor:pointer;color:var(--mut);margin-bottom:8px}
+.owe{color:#ff7b84}.ok{color:#9ccf86}
+.kpis{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:16px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;text-align:center}
+.kpi b{display:block;font:700 1.4rem Cinzel,Sarabun,serif}.kpi span{color:var(--mut);font-size:.8rem}
+.bar{height:6px;background:#0d0a0a;border-radius:3px;overflow:hidden;margin-bottom:8px}
+.bar i{display:block;height:100%;background:linear-gradient(90deg,var(--red),#e0434d)}
+.pr summary{color:var(--tx);margin:0}
 </style>
 </head>
 <body>
@@ -63,10 +74,26 @@ li:last-child{border:0}
   <button class="ghost" id="out">ออกจากระบบ</button>
 </section>
 
+<section id="dash" class="hide">
+  <p class="sub" style="margin-top:-12px">แดชบอร์ดแอดมิน · เห็นทุกยอดทุกเซสชัน</p>
+  <div id="dashBody"></div>
+  <button class="ghost" id="out2">ออกจากระบบ</button>
+</section>
+
 <section id="admin" class="hide">
   <div class="card">
-    <h3>เครื่องมือ DM (ใช้บนเครื่องตัวเองเท่านั้น)</h3>
-    <textarea id="src" spellcheck="false"></textarea>
+    <h3>เครื่องมือ DM · ใช้บนเครื่องตัวเองเท่านั้น</h3>
+    <p class="sum">บัญชีแอดมิน (ใช้ล็อกอินดูแดชบอร์ดบนเว็บจริง)</p>
+    <div class="row" style="margin-bottom:12px"><input id="au" placeholder="Admin username"><input id="ap" placeholder="Admin password"></div>
+    <input type="file" id="load" accept=".json">
+    <button class="ghost" id="save">ดาวน์โหลดไฟล์ข้อมูลต้นฉบับ (ห้ามอัปโหลดขึ้น GitHub)</button>
+  </div>
+  <div id="tables"></div>
+  <div class="card">
+    <details><summary>แก้ข้อมูลดิบ / เพิ่ม-ลบผู้เล่น (JSON)</summary>
+      <textarea id="src" spellcheck="false"></textarea>
+      <button class="ghost" id="apply">ใช้ข้อมูลนี้</button>
+    </details>
     <button id="gen">สร้าง data.json (เข้ารหัสแล้ว)</button>
     <p class="err" id="aerr"></p>
   </div>
@@ -98,7 +125,7 @@ async function login(){
     const rec=data[await uid(u)];
     if(!rec)throw 0;
     const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:unb64(rec.iv)},await key(u,p),unb64(rec.ct));
-    show(JSON.parse(dec.decode(pt)));
+    const d=JSON.parse(dec.decode(pt));d.admin?showAdmin(d):show(d);
   }catch(e){$('err').textContent='Username หรือ Password ไม่ถูกต้อง'}
   $('go').disabled=false;
 }
@@ -127,34 +154,112 @@ function show(d){
   $('login').classList.add('hide');$('view').classList.remove('hide');
 }
 
+const calc=p=>{const paid=p.payments.reduce((t,x)=>t+x.amount,0);return{paid,owed:p.sessions.length*p.rate-paid}};
+const money=n=>'฿'+baht(n);
+function showAdmin(d){
+  $('login').classList.add('hide');$('dash').classList.remove('hide');
+  document.querySelector('main').style.maxWidth='640px';
+  const h=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e};
+  const P=d.players.map(p=>({...p,sessions:[...p.sessions].sort(),...calc(p)}));
+  const sum=f=>P.reduce((t,p)=>t+f(p),0);
+  const root=$('dashBody');root.innerHTML='';
+  const grid=h('div','kpis');
+  [['เก็บแล้วรวม',money(sum(p=>p.paid)),'ok'],['ยอดค้างรวม',money(sum(p=>Math.max(p.owed,0))),'owe'],
+   ['ผู้เล่นที่ค้าง',P.filter(p=>p.owed>0).length+' / '+P.length,''],['การจ่ายทั้งหมด',sum(p=>p.payments.length)+' ครั้ง','']]
+  .forEach(([l,v,c])=>{const k=h('div','kpi');k.append(h('b',c,v),h('span',null,l));grid.append(k)});
+  root.append(grid);
+  [...new Set(P.map(p=>p.table))].forEach(tn=>{
+    const ps=P.filter(p=>p.table===tn).sort((a,b)=>b.owed-a.owed);
+    const sess=new Set(ps.flatMap(p=>p.sessions)).size;
+    const paid=ps.reduce((t,p)=>t+p.paid,0),owed=ps.reduce((t,p)=>t+Math.max(p.owed,0),0);
+    const billed=ps.reduce((t,p)=>t+p.sessions.length*p.rate,0);
+    const pct=billed?Math.min(100,Math.round(paid/billed*100)):100;
+    const c=h('div','card');
+    c.append(h('h3',null,tn+' · ฿'+ps[0].rate+'/เซสชัน'));
+    c.append(h('p','sum','จัดแล้ว '+sess+' เซสชัน · เก็บแล้ว '+money(paid)+' · ค้าง '+money(owed)+' · เก็บได้ '+pct+'%'));
+    const bar=h('div','bar'),f=h('i');f.style.width=pct+'%';bar.append(f);c.append(bar);
+    ps.forEach(p=>{
+      const dt=h('details','pr'),sm=h('summary');
+      const bd=h('span',p.owed>0?'owe':'ok',p.owed>0?'ค้าง '+money(p.owed):p.owed<0?'ล่วงหน้า '+money(-p.owed):'ครบ');
+      bd.style.float='right';
+      sm.append(h('b',null,p.name),bd);dt.append(sm);
+      dt.append(h('small',null,'เล่น '+p.sessions.length+' เซสชัน · จ่าย '+p.payments.length+' ครั้ง รวม '+money(p.paid)));
+      dt.append(h('small',null,'เซสชัน: '+(p.sessions.length?p.sessions.map(fmt).join(', '):'-')));
+      dt.append(h('small',null,'การจ่าย: '+(p.payments.length?p.payments.map(x=>fmt(x.date)+' '+money(x.amount)).join(', '):'-')));
+      c.append(dt);
+    });
+    root.append(c);
+  });
+}
+const logout=()=>{$('u').value=$('p').value='';['view','dash'].forEach(i=>$(i).classList.add('hide'));$('login').classList.remove('hide');document.querySelector('main').style.maxWidth=''};
 $('go').onclick=login;
 $('p').onkeydown=e=>e.key==='Enter'&&login();
-$('out').onclick=()=>{$('u').value=$('p').value='';$('view').classList.add('hide');$('login').classList.remove('hide')};
+$('out').onclick=$('out2').onclick=logout;
 
 addEventListener('hashchange',()=>location.reload());
 /* ---------- DM tool: เปิด index.html#admin บนเครื่องตัวเอง ---------- */
 if(location.hash==='#admin'){
   $('login').classList.add('hide');$('admin').classList.remove('hide');
-  const T=[["Monday Team",80,["2026-11-02","2026-11-09","2026-11-16"]],["Thursday Team",79,["2026-11-05","2026-11-12"]]];
-  const players=[];
-  T.forEach(([table,rate,sessions],t)=>{for(let i=1;i<=5;i++)players.push({
-    username:(t?'thu':'mon')+i,password:'เปลี่ยนรหัส-'+(t?'thu':'mon')+i,
-    name:'ผู้เล่น '+i+' ('+table+')',table,rate,sessions,payments:[]});});
-  $('src').value=JSON.stringify({players},null,1);
+  const today=()=>new Date().toISOString().slice(0,10);
+  const sample=()=>{const T=[["Monday Team",80,["2026-11-02","2026-11-09","2026-11-16"]],["Thursday Team",79,["2026-11-05","2026-11-12"]]],players=[];
+    T.forEach(([table,rate,sessions],t)=>{for(let i=1;i<=5;i++)players.push({username:(t?'thu':'mon')+i,password:'เปลี่ยนรหัส-'+(t?'thu':'mon')+i,name:'ผู้เล่น '+i+' ('+table+')',table,rate,sessions:[...sessions],payments:[]})});
+    return{players,admin:{username:'dm',password:'เปลี่ยนรหัสแอดมิน'}}};
+  const norm2=o=>{if(!o||!Array.isArray(o.players))throw new Error('ต้องมี players');o.players.forEach(p=>{p.sessions=p.sessions||[];p.payments=p.payments||[]});o.admin=o.admin||{username:'',password:''};return o};
+  let S;
+  try{S=norm2(JSON.parse(localStorage.getItem('baroviaSrc')))}catch(e){S=sample()}
+  const dl=(name,txt)=>{const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([txt],{type:'application/json'}));a.download=name;a.click()};
+
+  function render(){
+    try{localStorage.setItem('baroviaSrc',JSON.stringify(S))}catch(e){}
+    $('src').value=JSON.stringify(S,null,1);
+    $('au').value=S.admin.username;$('ap').value=S.admin.password;
+    const box=$('tables');box.innerHTML='';
+    [...new Set(S.players.map(p=>p.table))].forEach(tn=>{
+      const ps=S.players.filter(p=>p.table===tn);
+      const tot=ps.reduce((a,p)=>{const c=calc(p);a.paid+=c.paid;a.owed+=c.owed;return a},{paid:0,owed:0});
+      const d=document.createElement('div');d.className='card';
+      d.innerHTML='<h3></h3><div class="row"><input type="date" class="sd" value="'+today()+'"><button class="add">+ เพิ่มเซสชัน</button></div><p class="sum"></p><div class="pl"></div>';
+      d.querySelector('h3').textContent=tn+' · ฿'+ps[0].rate+'/เซสชัน';
+      d.querySelector('.sum').textContent='เก็บแล้วรวม ฿'+baht(tot.paid)+' · ค้างรวม ฿'+baht(tot.owed)+' · ติ๊กเฉพาะคนที่มาเล่นก่อนกดเพิ่มเซสชัน';
+      const pairs=[];
+      ps.forEach(p=>{
+        const c=calc(p),r=document.createElement('div');r.className='pr';
+        r.innerHTML='<label><input type="checkbox" checked class="ck"><b class="nm"></b></label><small></small><div class="row"><input type="number" class="amt" min="0" placeholder="ยอดที่จ่าย ฿"><button class="pay">บันทึกการจ่าย</button></div>';
+        r.querySelector('.nm').textContent=p.name+' ('+p.username+')';
+        r.querySelector('small').innerHTML='เล่น '+p.sessions.length+' เซสชัน · จ่าย '+p.payments.length+' ครั้ง รวม ฿'+baht(c.paid)+' · '+(c.owed>0?'<span class="owe">ค้าง ฿'+baht(c.owed)+'</span>':'<span class="ok">'+(c.owed<0?'จ่ายล่วงหน้า ฿'+baht(-c.owed):'ชำระครบ')+'</span>');
+        const amt=r.querySelector('.amt');if(c.owed>0)amt.value=c.owed;
+        r.querySelector('.pay').onclick=()=>{const v=+amt.value;if(v>0){p.payments.push({date:today(),amount:v});render()}};
+        pairs.push([r.querySelector('.ck'),p]);
+        d.querySelector('.pl').appendChild(r);
+      });
+      d.querySelector('.add').onclick=()=>{
+        const date=d.querySelector('.sd').value;if(!date)return;
+        pairs.forEach(([ck,p])=>{if(ck.checked&&!p.sessions.includes(date))p.sessions.push(date)});
+        render();
+      };
+      box.appendChild(d);
+    });
+  }
+  render();
+
+  $('load').onchange=async e=>{try{S=norm2(JSON.parse(await e.target.files[0].text()));render();$('aerr').textContent=''}catch(x){$('aerr').style.color='';$('aerr').textContent='ไฟล์ไม่ถูกต้อง: '+x.message}};
+  $('au').oninput=$('ap').oninput=()=>{S.admin={username:$('au').value,password:$('ap').value};try{localStorage.setItem('baroviaSrc',JSON.stringify(S))}catch(e){}};
+  $('save').onclick=()=>dl('players-source.json',JSON.stringify(S,null,1));
+  $('apply').onclick=()=>{try{S=norm2(JSON.parse($('src').value));render();$('aerr').style.color='#9ccf86';$('aerr').textContent='อัปเดตแล้ว'}catch(x){$('aerr').style.color='';$('aerr').textContent='JSON ผิดพลาด: '+x.message}};
   $('gen').onclick=async()=>{
     try{
-      const {players}=JSON.parse($('src').value),out={};
-      for(const pl of players){
+      const out={},A=S.admin;
+      const seal=async(u,pw,payload)=>{const iv=crypto.getRandomValues(new Uint8Array(12));const ct=await crypto.subtle.encrypt({name:'AES-GCM',iv},await key(u,pw),enc.encode(JSON.stringify(payload)));out[await uid(u)]={iv:b64(iv),ct:b64(ct)}};
+      if(!A.username||!A.password)throw new Error('ต้องตั้ง username/password ของแอดมิน');
+      if(S.players.some(p=>norm(p.username||'')===norm(A.username)))throw new Error('username แอดมินซ้ำกับผู้เล่น');
+      for(const pl of S.players){
         if(!pl.username||!pl.password)throw new Error('ต้องมี username และ password ทุกคน');
         const {username,password,...payload}=pl;
-        const iv=crypto.getRandomValues(new Uint8Array(12));
-        const ct=await crypto.subtle.encrypt({name:'AES-GCM',iv},await key(username,password),enc.encode(JSON.stringify(payload)));
-        out[await uid(username)]={iv:b64(iv),ct:b64(ct)};
+        await seal(username,password,payload);
       }
-      const a=document.createElement('a');
-      a.href=URL.createObjectURL(new Blob([JSON.stringify(out)],{type:'application/json'}));
-      a.download='data.json';a.click();
-      $('aerr').style.color='#9ccf86';$('aerr').textContent='สร้างแล้ว '+players.length+' คน';
+      await seal(A.username,A.password,{admin:true,players:S.players.map(({password,...p})=>p)});
+      dl('data.json',JSON.stringify(out));
+      $('aerr').style.color='#9ccf86';$('aerr').textContent='สร้างแล้ว '+S.players.length+' ผู้เล่น + แอดมิน';
     }catch(e){$('aerr').style.color='';$('aerr').textContent='ผิดพลาด: '+e.message}
   };
 }
