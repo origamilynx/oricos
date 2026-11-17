@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Barovia Ledger — บัญชีค่าเล่น</title>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Sarabun:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0b0809;--card:#161011;--line:#3a1f22;--tx:#d9cfc6;--mut:#8a7b74;--red:#b3141f;--ok:#6f9a5a;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:radial-gradient(ellipse at top,#2a0d11 0,var(--bg) 60%);color:var(--tx);font-family:Sarabun,sans-serif;padding:24px 16px env(safe-area-inset-bottom)}
+main{max-width:460px;margin:0 auto}
+h1{font-family:Cinzel,serif;text-align:center;color:#e8dcd0;letter-spacing:.08em;margin:24px 0 4px;font-size:1.7rem;text-shadow:0 0 18px #b3141f88}
+.sub{text-align:center;color:var(--mut);margin:0 0 28px;font-size:.9rem}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:20px;margin-bottom:16px;box-shadow:0 0 30px #000a}
+input,textarea{width:100%;background:#0d0a0a;border:1px solid var(--line);color:var(--tx);padding:12px;border-radius:6px;font:inherit;margin-bottom:12px}
+textarea{min-height:260px;font-family:monospace;font-size:.8rem}
+button{width:100%;background:var(--red);color:#fff;border:0;padding:12px;border-radius:6px;font:600 1rem Sarabun,sans-serif;cursor:pointer}
+button.ghost{background:none;border:1px solid var(--line);color:var(--mut);margin-top:8px}
+.err{color:#e5646c;min-height:1.2em;margin:8px 0 0;text-align:center;font-size:.9rem}
+.name{font-family:Cinzel,serif;font-size:1.4rem;margin:0}
+.tbl{color:var(--mut);margin:2px 0 16px}
+.status{text-align:center;padding:16px;border-radius:8px;border:1px solid;margin-bottom:16px}
+.status b{display:block;font-size:1.8rem;font-family:Cinzel,serif}
+.debt{border-color:var(--red);background:#2a0b0e;color:#ff7b84}
+.paid{border-color:var(--ok);background:#12200f;color:#9ccf86}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center;margin-bottom:16px}
+.stats div{background:#0d0a0a;border-radius:6px;padding:10px 4px}
+.stats b{display:block;font-size:1.3rem}
+.stats span{color:var(--mut);font-size:.75rem}
+h3{font-family:Cinzel,serif;font-size:1rem;margin:0 0 8px;color:var(--mut)}
+ul{list-style:none;padding:0;margin:0}
+li{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line)}
+li:last-child{border:0}
+.hide{display:none}
+</style>
+</head>
+<body>
+<main>
+<h1>BAROVIA LEDGER</h1>
+<p class="sub">บัญชีค่าเล่น · Curse of Strahd</p>
+
+<section id="login" class="card">
+  <input id="u" placeholder="Username" autocomplete="username" autocapitalize="none">
+  <input id="p" type="password" placeholder="Password" autocomplete="current-password">
+  <button id="go">เข้าสู่ปราสาท</button>
+  <p class="err" id="err"></p>
+</section>
+
+<section id="view" class="hide">
+  <div class="card">
+    <p class="name" id="vName"></p>
+    <p class="tbl" id="vTable"></p>
+    <div class="status" id="vStatus"></div>
+    <div class="stats">
+      <div><b id="vSess">0</b><span>เซสชันที่เล่น</span></div>
+      <div><b id="vCount">0</b><span>ครั้งที่ชำระ</span></div>
+      <div><b id="vTotal">0</b><span>จ่ายรวม (฿)</span></div>
+    </div>
+    <h3>ประวัติการชำระ</h3>
+    <ul id="vList"></ul>
+  </div>
+  <button class="ghost" id="out">ออกจากระบบ</button>
+</section>
+
+<section id="admin" class="hide">
+  <div class="card">
+    <h3>เครื่องมือ DM (ใช้บนเครื่องตัวเองเท่านั้น)</h3>
+    <textarea id="src" spellcheck="false"></textarea>
+    <button id="gen">สร้าง data.json (เข้ารหัสแล้ว)</button>
+    <p class="err" id="aerr"></p>
+  </div>
+</section>
+</main>
+
+<script>
+const enc=new TextEncoder(),dec=new TextDecoder(),SALT='barovia-ledger-v1';
+const $=i=>document.getElementById(i);
+const hex=b=>[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('');
+const b64=b=>btoa(String.fromCharCode(...new Uint8Array(b)));
+const unb64=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
+const norm=u=>u.trim().toLowerCase();
+const uid=async u=>hex(await crypto.subtle.digest('SHA-256',enc.encode(SALT+norm(u))));
+async function key(u,p){
+  const m=await crypto.subtle.importKey('raw',enc.encode(p),'PBKDF2',false,['deriveKey']);
+  return crypto.subtle.deriveKey({name:'PBKDF2',salt:enc.encode(SALT+norm(u)),iterations:200000,hash:'SHA-256'},m,{name:'AES-GCM',length:256},false,['encrypt','decrypt']);
+}
+const baht=n=>n.toLocaleString('th-TH');
+const fmt=d=>new Date(d).toLocaleDateString('th-TH',{day:'numeric',month:'short',year:'2-digit'});
+
+async function login(){
+  $('err').textContent='';
+  const u=$('u').value,p=$('p').value;
+  if(!u||!p){$('err').textContent='กรอกให้ครบ';return}
+  $('go').disabled=true;
+  try{
+    const data=await (await fetch('data.json',{cache:'no-store'})).json();
+    const rec=data[await uid(u)];
+    if(!rec)throw 0;
+    const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:unb64(rec.iv)},await key(u,p),unb64(rec.ct));
+    show(JSON.parse(dec.decode(pt)));
+  }catch(e){$('err').textContent='Username หรือ Password ไม่ถูกต้อง'}
+  $('go').disabled=false;
+}
+
+function show(d){
+  const sessions=(d.sessions||[]).length,pays=d.payments||[];
+  const total=pays.reduce((s,x)=>s+x.amount,0),owed=sessions*d.rate-total;
+  $('vName').textContent=d.name;
+  $('vTable').textContent=d.table+' · ฿'+d.rate+'/เซสชัน';
+  const st=$('vStatus');
+  st.className='status '+(owed>0?'debt':'paid');
+  st.innerHTML=owed>0?'<span>ยอดค้างชำระ</span><b>฿'+baht(owed)+'</b>':
+    '<span>สถานะ</span><b>ชำระครบแล้ว</b>'+(owed<0?'<small>จ่ายล่วงหน้า ฿'+baht(-owed)+'</small>':'');
+  $('vSess').textContent=sessions;
+  $('vCount').textContent=pays.length;
+  $('vTotal').textContent=baht(total);
+  const l=$('vList');l.innerHTML='';
+  if(!pays.length)l.innerHTML='<li><span>ยังไม่มีการชำระ</span></li>';
+  [...pays].reverse().forEach(x=>{
+    const li=document.createElement('li');
+    li.innerHTML='<span></span><span></span>';
+    li.children[0].textContent=fmt(x.date);
+    li.children[1].textContent='฿'+baht(x.amount);
+    l.appendChild(li);
+  });
+  $('login').classList.add('hide');$('view').classList.remove('hide');
+}
+
+$('go').onclick=login;
+$('p').onkeydown=e=>e.key==='Enter'&&login();
+$('out').onclick=()=>{$('u').value=$('p').value='';$('view').classList.add('hide');$('login').classList.remove('hide')};
+
+addEventListener('hashchange',()=>location.reload());
+/* ---------- DM tool: เปิด index.html#admin บนเครื่องตัวเอง ---------- */
+if(location.hash==='#admin'){
+  $('login').classList.add('hide');$('admin').classList.remove('hide');
+  const T=[["Monday Team",80,["2026-11-02","2026-11-09","2026-11-16"]],["Thursday Team",79,["2026-11-05","2026-11-12"]]];
+  const players=[];
+  T.forEach(([table,rate,sessions],t)=>{for(let i=1;i<=5;i++)players.push({
+    username:(t?'thu':'mon')+i,password:'เปลี่ยนรหัส-'+(t?'thu':'mon')+i,
+    name:'ผู้เล่น '+i+' ('+table+')',table,rate,sessions,payments:[]});});
+  $('src').value=JSON.stringify({players},null,1);
+  $('gen').onclick=async()=>{
+    try{
+      const {players}=JSON.parse($('src').value),out={};
+      for(const pl of players){
+        if(!pl.username||!pl.password)throw new Error('ต้องมี username และ password ทุกคน');
+        const {username,password,...payload}=pl;
+        const iv=crypto.getRandomValues(new Uint8Array(12));
+        const ct=await crypto.subtle.encrypt({name:'AES-GCM',iv},await key(username,password),enc.encode(JSON.stringify(payload)));
+        out[await uid(username)]={iv:b64(iv),ct:b64(ct)};
+      }
+      const a=document.createElement('a');
+      a.href=URL.createObjectURL(new Blob([JSON.stringify(out)],{type:'application/json'}));
+      a.download='data.json';a.click();
+      $('aerr').style.color='#9ccf86';$('aerr').textContent='สร้างแล้ว '+players.length+' คน';
+    }catch(e){$('aerr').style.color='';$('aerr').textContent='ผิดพลาด: '+e.message}
+  };
+}
+</script>
+</body>
+</html>
