@@ -225,7 +225,7 @@ function showAdmin(d){
       dt.append(h('small',null,'เล่น '+p.sessions.length+' เซสชัน · ชำระ '+nPaid(p)+' ครั้ง รวม '+money(p.paid)));
       const ss=perSession(p),un=ss.filter(x=>x.owed>0);
       dt.append(h('small',null,'เซสชันที่เล่น: '+(ss.length?ss.map(x=>fmt(x.date)+(x.price!==p.rate?' ['+money(x.price)+']':'')+(x.owed>0?' ✗':' ✓')).join(', '):'-')));
-      if(un.length)dt.append(h('small','owe','ขาดชำระ: '+un.map(x=>fmt(x.date)+(x.paid>0?' (รอชำระ ฿'+baht(x.owed)+')':'')).join(', ')));
+      if(un.length)dt.append(h('small','owe','รอชำระ: '+un.map(x=>fmt(x.date)+(x.paid>0?' (รอชำระ ฿'+baht(x.owed)+')':'')).join(', ')));
       dt.append(h('small',null,'การชำระ: '+(p.payments.length?p.payments.map(x=>fmt(x.date)+' '+payAmt(x)).join(', '):'-')));
       c.append(dt);
     });
