@@ -128,7 +128,7 @@ function show(d){
   $('vTable').textContent=d.table+' · ฿'+d.rate+'/เซสชัน';
   const st=$('vStatus');
   st.className='status '+(owed>0?'debt':'paid');
-  st.innerHTML=owed>0?'<span>ยอดค้างชำระ</span><b>฿'+baht(owed)+'</b><small>ค้างเซสชัน: '+unpaid+'</small>':
+  st.innerHTML=owed>0?'<span>ยอดรอชำระ</span><b>฿'+baht(owed)+'</b><small>รอชำระเซสชัน: '+unpaid+'</small>':
     '<span>สถานะ</span><b>ชำระครบแล้ว</b>'+(owed<0?'<small>จ่ายล่วงหน้า ฿'+baht(-owed)+'</small>':'');
   $('vSess').textContent=sessions;
   $('vCount').textContent=pays.filter(x=>x.amount>0).length;
@@ -139,7 +139,7 @@ function show(d){
     const li=document.createElement('li');li.innerHTML='<span></span><span></span>';
     li.children[0].textContent=fmt(x.date)+' · ฿'+baht(x.price)+(x.note?' · '+x.note:'');
     const st=li.children[1];st.className=x.owed>0?'owe':'ok';
-    st.textContent=x.price===0?'ฟรี':x.owed===0?'✓ จ่ายแล้ว':'✗ ค้าง ฿'+baht(x.owed)+(x.paid>0?' (จ่ายแล้ว ฿'+baht(x.paid)+')':'');
+    st.textContent=x.price===0?'ฟรี':x.owed===0?'✓ จ่ายแล้ว':'⧗ รอชำระ ฿'+baht(x.owed)+(x.paid>0?' (จ่ายแล้ว ฿'+baht(x.paid)+')':'');
     sl.appendChild(li);
   });
   const l=$('vList');l.innerHTML='';
@@ -201,8 +201,8 @@ function showAdmin(d){
   const sum=f=>P.reduce((t,p)=>t+f(p),0);
   const root=$('dashBody');root.innerHTML='';
   const grid=h('div','kpis');
-  [['เก็บแล้วรวม',money(sum(p=>p.paid)),'ok'],['ยอดค้างรวม',money(sum(p=>Math.max(p.owed,0))),'owe'],
-   ['ผู้เล่นที่ค้าง',P.filter(p=>p.owed>0).length+' / '+P.length,''],['การจ่ายทั้งหมด',sum(nPaid)+' ครั้ง','']]
+  [['เก็บแล้วรวม',money(sum(p=>p.paid)),'ok'],['ยอดรอชำระรวม',money(sum(p=>Math.max(p.owed,0))),'owe'],
+   ['ผู้เล่นที่รอชำระ',P.filter(p=>p.owed>0).length+' / '+P.length,''],['การจ่ายทั้งหมด',sum(nPaid)+' ครั้ง','']]
   .forEach(([l,v,c])=>{const k=h('div','kpi');k.append(h('b',c,v),h('span',null,l));grid.append(k)});
   root.append(grid);
   if(issues.length){const w=h('div','card');w.append(h('h3','owe','⚠ พบข้อมูลผิดปกติ — แก้ใน admin.html แล้วสร้าง data.json ใหม่'));
@@ -215,17 +215,17 @@ function showAdmin(d){
     const pct=billed?Math.min(100,Math.round(paid/billed*100)):100;
     const c=h('div','card');
     c.append(h('h3',null,tn+' · ฿'+ps[0].rate+'/เซสชัน'));
-    c.append(h('p','sum','จัดแล้ว '+sess+' เซสชัน · เก็บแล้ว '+money(paid)+' · ค้าง '+money(owed)+' · เก็บได้ '+pct+'%'));
+    c.append(h('p','sum','จัดแล้ว '+sess+' เซสชัน · เก็บแล้ว '+money(paid)+' · รอชำระ '+money(owed)+' · เก็บได้ '+pct+'%'));
     const bar=h('div','bar'),f=h('i');f.style.width=pct+'%';bar.append(f);c.append(bar);
     ps.forEach(p=>{
       const dt=h('details','pr'),sm=h('summary');
-      const bd=h('span',p.owed>0?'owe':'ok',p.owed>0?'ค้าง '+money(p.owed):p.owed<0?'ล่วงหน้า '+money(-p.owed):'ครบ');
+      const bd=h('span',p.owed>0?'owe':'ok',p.owed>0?'รอชำระ '+money(p.owed):p.owed<0?'ล่วงหน้า '+money(-p.owed):'ครบ');
       bd.style.float='right';
       sm.append(h('b',null,p.name),bd);dt.append(sm);
       dt.append(h('small',null,'เล่น '+p.sessions.length+' เซสชัน · จ่าย '+nPaid(p)+' ครั้ง รวม '+money(p.paid)));
       const ss=perSession(p),un=ss.filter(x=>x.owed>0);
       dt.append(h('small',null,'เซสชันที่เล่น: '+(ss.length?ss.map(x=>fmt(x.date)+(x.price!==p.rate?' ['+money(x.price)+']':'')+(x.owed>0?' ✗':' ✓')).join(', '):'-')));
-      if(un.length)dt.append(h('small','owe','ขาดชำระ: '+un.map(x=>fmt(x.date)+(x.paid>0?' (ค้าง ฿'+baht(x.owed)+')':'')).join(', ')));
+      if(un.length)dt.append(h('small','owe','ขาดชำระ: '+un.map(x=>fmt(x.date)+(x.paid>0?' (รอชำระ ฿'+baht(x.owed)+')':'')).join(', ')));
       dt.append(h('small',null,'การจ่าย: '+(p.payments.length?p.payments.map(x=>fmt(x.date)+' '+payAmt(x)).join(', '):'-')));
       c.append(dt);
     });
