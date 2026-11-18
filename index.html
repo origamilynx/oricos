@@ -123,7 +123,7 @@ async function login(){
 function show(d){
   d=clean(d);const sessions=d.sessions.length,pays=d.payments;
   const ss=perSession(d),unpaid=ss.filter(x=>x.owed>0).map(x=>fmt(x.date)).join(', ');
-  const total=pays.reduce((s,x)=>s+x.amount,0),disc=pays.reduce((s,x)=>s+(x.discount||0),0),owed=sessions*d.rate-total-disc;
+  const total=pays.reduce((s,x)=>s+x.amount,0),disc=pays.reduce((s,x)=>s+(x.discount||0),0),owed=d.sessions.reduce((t,s)=>t+s.price,0)-total-disc;
   $('vName').textContent=d.name;
   $('vTable').textContent=d.table+' · ฿'+d.rate+'/เซสชัน';
   const st=$('vStatus');
@@ -137,9 +137,9 @@ function show(d){
   if(!ss.length)sl.innerHTML='<li><span>ยังไม่มีเซสชัน</span></li>';
   [...ss].reverse().forEach(x=>{
     const li=document.createElement('li');li.innerHTML='<span></span><span></span>';
-    li.children[0].textContent=fmt(x.date);
+    li.children[0].textContent=fmt(x.date)+' · ฿'+baht(x.price)+(x.note?' · '+x.note:'');
     const st=li.children[1];st.className=x.owed>0?'owe':'ok';
-    st.textContent=x.owed===0?'✓ จ่ายแล้ว':'✗ ค้าง ฿'+baht(x.owed)+(x.paid>0?' (จ่ายแล้ว ฿'+baht(x.paid)+')':'');
+    st.textContent=x.price===0?'ฟรี':x.owed===0?'✓ จ่ายแล้ว':'✗ ค้าง ฿'+baht(x.owed)+(x.paid>0?' (จ่ายแล้ว ฿'+baht(x.paid)+')':'');
     sl.appendChild(li);
   });
   const l=$('vList');l.innerHTML='';
@@ -154,7 +154,11 @@ function show(d){
   $('login').classList.add('hide');$('view').classList.remove('hide');
 }
 
-const calc=p=>{const paid=p.payments.reduce((t,x)=>t+x.amount,0),disc=p.payments.reduce((t,x)=>t+(x.discount||0),0);return{paid,disc,owed:p.sessions.length*p.rate-paid-disc}};
+const sDate=s=>typeof s==='string'?s:s.date;
+const sPrice=(p,s)=>(typeof s==='string'||s.price==null)?p.rate:+s.price;
+// วันที่ซ้ำ: นับครั้งเดียว ถ้ามีทั้งแบบข้อความและแบบมีราคา/หมายเหตุ ใช้แบบหลัง
+const dedupe=l=>{const m=new Map();(l||[]).forEach(s=>{if(s==null)return;const d=sDate(s);if(!m.has(d)||typeof s!=='string')m.set(d,s)});return[...m.values()]};
+const calc=p=>{const paid=p.payments.reduce((t,x)=>t+(+x.amount||0),0),disc=p.payments.reduce((t,x)=>t+(+x.discount||0),0),billed=p.sessions.reduce((t,s)=>t+sPrice(p,s),0);return{paid,disc,billed,owed:billed-paid-disc}};
 const payAmt=x=>(x.amount>0?'฿'+baht(x.amount):'')+(x.discount?(x.amount>0?' + ':'')+'ส่วนลด ฿'+baht(x.discount):'')+(x.note?' · '+x.note:'');
 const nPaid=p=>p.payments.filter(x=>x.amount>0).length;
 const money=n=>'฿'+baht(n);
@@ -162,7 +166,13 @@ const num=v=>{const n=parseFloat(String(v==null?'':v).replace(/[^\d.\-]/g,''));r
 function clean(p,issues){
   const nm=p.name||p.username||'?',bad=m=>issues&&issues.push(nm+': '+m);
   let rate=num(p.rate);if(!(rate>=0)){bad('ค่าเล่นต่อเซสชัน (rate) ไม่ถูกต้อง '+JSON.stringify(p.rate)+' → นับเป็น 0');rate=0}
-  const ss=Array.isArray(p.sessions)?p.sessions:(bad('ไม่มีรายการเซสชัน'),[]);
+  const raw=Array.isArray(p.sessions)?p.sessions:(bad('ไม่มีรายการเซสชัน'),[]),uniq=dedupe(raw);
+  if(uniq.length<raw.length)bad('มีเซสชันวันที่ซ้ำ '+(raw.length-uniq.length)+' รายการ → นับครั้งเดียว (ใช้รายการที่มีราคา/หมายเหตุ) ควรลบรายการซ้ำใน admin.html');
+  const ss=uniq.map(s=>{
+    if(typeof s==='string')return{date:s,price:rate};
+    const pr=s&&s.price!=null?num(s.price):rate;
+    if(isNaN(pr)){bad('ราคาเซสชันไม่ถูกต้อง '+JSON.stringify(s)+' → ใช้ราคาปกติ');return{...s,price:rate}}
+    return{...s,price:pr}});
   const pays=(Array.isArray(p.payments)?p.payments:(bad('ไม่มีรายการจ่ายเงิน'),[])).map(x=>{
     if(typeof x==='string')return{date:x,for:x,amount:rate,discount:0};
     const dsc=num(x&&x.discount)||0,a=(x&&x.amount==null)?0:num(x&&x.amount);
@@ -172,18 +182,22 @@ function clean(p,issues){
 }
 // ตัดยอดที่จ่ายไปปิดเซสชันเก่าสุดก่อน
 // จ่ายระบุวันที่ (for) ตัดเซสชันนั้นตรงๆ ส่วนที่เหลือตัดเซสชันเก่าสุดก่อน
+// ยอดเกินราคา (หรือจ่ายให้วันที่ไม่มีเซสชัน) ไหลไปตัดเซสชันเก่าสุดที่ยังค้าง ให้ผลรวมตรงกับยอดค้างรวม
 const perSession=p=>{const pays=p.payments||[],direct={};
+  const ses=dedupe(p.sessions||[]).sort((a,b)=>sDate(a)<sDate(b)?-1:sDate(a)>sDate(b)?1:0);
   pays.forEach(x=>{if(x.for)direct[x.for]=(direct[x.for]||0)+x.amount+(x.discount||0)});
-  let left=pays.filter(x=>!x.for).reduce((t,x)=>t+x.amount+(x.discount||0),0);
-  return [...(p.sessions||[])].sort().map(date=>{
-    let paid=Math.min(direct[date]||0,p.rate);
-    const take=Math.min(left,p.rate-paid);paid+=take;left-=take;
-    return{date,paid,owed:p.rate-paid}})};
+  const have=new Set(ses.map(sDate));
+  let left=pays.filter(x=>!x.for).reduce((t,x)=>t+x.amount+(x.discount||0),0)
+    +Object.keys(direct).filter(d=>!have.has(d)).reduce((t,d)=>t+direct[d],0);
+  const rows=ses.map(s=>{const date=sDate(s),price=sPrice(p,s),d=direct[date]||0;left+=Math.max(0,d-price);
+    return{date,price,note:typeof s==='string'?'':(s.note||''),paid:Math.min(d,price)}});
+  rows.forEach(r=>{const t=Math.min(left,r.price-r.paid);r.paid+=t;left-=t;r.owed=r.price-r.paid});
+  return rows};
 function showAdmin(d){
   $('login').classList.add('hide');$('dash').classList.remove('hide');
   document.querySelector('main').style.maxWidth='640px';
   const h=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e};
-  const issues=[],P=d.players.map(p=>{const c=clean(p,issues);return{...c,sessions:[...c.sessions].sort(),...calc(c)}});
+  const issues=[],P=d.players.map(p=>{const c=clean(p,issues);return{...c,...calc(c)}});
   const sum=f=>P.reduce((t,p)=>t+f(p),0);
   const root=$('dashBody');root.innerHTML='';
   const grid=h('div','kpis');
@@ -195,9 +209,9 @@ function showAdmin(d){
     issues.forEach(m=>w.append(h('small',null,m)));root.append(w)}
   [...new Set(P.map(p=>p.table))].forEach(tn=>{
     const ps=P.filter(p=>p.table===tn).sort((a,b)=>b.owed-a.owed);
-    const sess=new Set(ps.flatMap(p=>p.sessions)).size;
+    const sess=new Set(ps.flatMap(p=>p.sessions.map(s=>s.date))).size;
     const paid=ps.reduce((t,p)=>t+p.paid,0),owed=ps.reduce((t,p)=>t+Math.max(p.owed,0),0);
-    const billed=ps.reduce((t,p)=>t+p.sessions.length*p.rate,0);
+    const billed=ps.reduce((t,p)=>t+p.billed,0);
     const pct=billed?Math.min(100,Math.round(paid/billed*100)):100;
     const c=h('div','card');
     c.append(h('h3',null,tn+' · ฿'+ps[0].rate+'/เซสชัน'));
@@ -210,7 +224,7 @@ function showAdmin(d){
       sm.append(h('b',null,p.name),bd);dt.append(sm);
       dt.append(h('small',null,'เล่น '+p.sessions.length+' เซสชัน · จ่าย '+nPaid(p)+' ครั้ง รวม '+money(p.paid)));
       const ss=perSession(p),un=ss.filter(x=>x.owed>0);
-      dt.append(h('small',null,'เซสชันที่เล่น: '+(ss.length?ss.map(x=>fmt(x.date)+(x.owed>0?' ✗':' ✓')).join(', '):'-')));
+      dt.append(h('small',null,'เซสชันที่เล่น: '+(ss.length?ss.map(x=>fmt(x.date)+(x.price!==p.rate?' ['+money(x.price)+']':'')+(x.owed>0?' ✗':' ✓')).join(', '):'-')));
       if(un.length)dt.append(h('small','owe','ขาดชำระ: '+un.map(x=>fmt(x.date)+(x.paid>0?' (ค้าง ฿'+baht(x.owed)+')':'')).join(', ')));
       dt.append(h('small',null,'การจ่าย: '+(p.payments.length?p.payments.map(x=>fmt(x.date)+' '+payAmt(x)).join(', '):'-')));
       c.append(dt);
