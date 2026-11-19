@@ -44,6 +44,13 @@ li:last-child{border:0}
 .bar{height:6px;background:#0d0a0a;border-radius:3px;overflow:hidden;margin-bottom:8px}
 .bar i{display:block;height:100%;background:linear-gradient(90deg,var(--red),#e0434d)}
 .pr summary{color:var(--tx);margin:0}
+.grp{color:var(--mut);font-size:.8rem;margin:10px 0 4px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font-size:.78rem;padding:3px 9px;border-radius:999px;border:1px solid;white-space:nowrap}
+.chip.ok{color:#9ccf86;border-color:#2c4a22;background:#12200f}
+.chip.owe{color:#ff7b84;border-color:#5a1a20;background:#2a0b0e}
+.chip.free{color:var(--mut);border-color:var(--line)}
+.hist{margin-top:10px}.hist summary{color:var(--mut);font-size:.85rem}
 .show{display:flex;gap:8px;align-items:center;color:var(--mut);margin:-4px 0 12px;font-size:.9rem}.show input{width:auto;margin:0}
 .status small{display:block;font-size:.8rem;margin-top:6px;opacity:.85}
 </style>
@@ -128,7 +135,7 @@ function show(d){
   $('vTable').textContent=d.table+' · ฿'+d.rate+'/เซสชัน';
   const st=$('vStatus');
   st.className='status '+(owed>0?'debt':'paid');
-  st.innerHTML=owed>0?'<span>ยอดรอชำระ</span><b>฿'+baht(owed)+'</b><small>รอชำระเซสชัน: '+unpaid+'</small>':
+  st.innerHTML=owed>0?'<span>ยอดรอชำระ</span><b>฿'+baht(owed)+'</b><small>รอชำระ '+ss.filter(x=>x.owed>0).length+' เซสชัน · ดูรายการด้านล่าง</small>':
     '<span>สถานะ</span><b>ชำระครบแล้ว</b>'+(owed<0?'<small>ชำระล่วงหน้า ฿'+baht(-owed)+'</small>':'');
   $('vSess').textContent=sessions;
   $('vCount').textContent=pays.filter(x=>x.amount>0).length;
@@ -223,10 +230,16 @@ function showAdmin(d){
       bd.style.float='right';
       sm.append(h('b',null,p.name),bd);dt.append(sm);
       dt.append(h('small',null,'เล่น '+p.sessions.length+' เซสชัน · ชำระ '+nPaid(p)+' ครั้ง รวม '+money(p.paid)));
-      const ss=perSession(p),un=ss.filter(x=>x.owed>0);
-      dt.append(h('small',null,'เซสชันที่เล่น: '+(ss.length?ss.map(x=>fmt(x.date)+(x.price!==p.rate?' ['+money(x.price)+']':'')+(x.owed>0?' ✗':' ✓')).join(', '):'-')));
-      if(un.length)dt.append(h('small','owe','รอชำระ: '+un.map(x=>fmt(x.date)+(x.paid>0?' (รอชำระ ฿'+baht(x.owed)+')':'')).join(', ')));
-      dt.append(h('small',null,'การชำระ: '+(p.payments.length?p.payments.map(x=>fmt(x.date)+' '+payAmt(x)).join(', '):'-')));
+      const ss=perSession(p),un=ss.filter(x=>x.owed>0),ok=ss.filter(x=>x.owed<=0);
+      const chips=(list,cls)=>{const w=h('div','chips');list.forEach(x=>{
+        const t=fmt(x.date)+(x.price===0?' · ฟรี':x.price!==p.rate?' ['+money(x.price)+']':'')+(cls==='owe'&&x.paid>0?' · เหลือ '+money(x.owed):'');
+        w.append(h('span','chip '+(x.price===0?'free':cls),t))});return w};
+      if(un.length)dt.append(h('div','grp','รอชำระ ('+un.length+')'),chips(un,'owe'));
+      if(ok.length)dt.append(h('div','grp','ชำระแล้ว ('+ok.length+')'),chips(ok,'ok'));
+      if(p.payments.length){const ph=h('details','hist'),ul=h('ul');
+        ph.append(h('summary',null,'ประวัติการชำระ ('+p.payments.length+' รายการ)'));
+        p.payments.forEach(x=>{const li=h('li');li.append(h('span',null,fmt(x.date)),h('span',null,payAmt(x)));ul.append(li)});
+        ph.append(ul);dt.append(ph)}
       c.append(dt);
     });
     root.append(c);
