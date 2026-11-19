@@ -30,7 +30,8 @@ button.ghost{background:none;border:1px solid var(--line);color:var(--mut);margi
 .stats span{color:var(--mut);font-size:.75rem}
 h3{font-family:Cinzel,serif;font-size:1rem;margin:0 0 8px;color:var(--mut)}
 ul{list-style:none;padding:0;margin:0}
-li{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line)}
+li{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--line)}
+li span:last-child{flex-shrink:0}
 li:last-child{border:0}
 .hide{display:none}
 .row{display:flex;gap:8px;align-items:center}.row input{margin:0}.row button{width:auto;white-space:nowrap;padding:10px 12px}
@@ -144,7 +145,7 @@ function show(d){
   if(!ss.length)sl.innerHTML='<li><span>ยังไม่มีเซสชัน</span></li>';
   [...ss].reverse().forEach(x=>{
     const li=document.createElement('li');li.innerHTML='<span></span><span></span>';
-    li.children[0].textContent=fmt(x.date)+' · ฿'+baht(x.price)+(x.note?' · '+x.note:'');
+    li.children[0].textContent='เซสชันที่ '+x.num+' · '+fmt(x.date)+' · ฿'+baht(x.price)+(x.note?' · '+x.note:'');
     const st=li.children[1];st.className=x.owed>0?'owe':'ok';
     st.textContent=x.price===0?'ฟรี':x.owed===0?'✓ ชำระแล้ว':'⧗ รอชำระ ฿'+baht(x.owed)+(x.paid>0?' (ชำระแล้ว ฿'+baht(x.paid)+')':'');
     sl.appendChild(li);
@@ -193,7 +194,7 @@ function clean(p,issues){
 // (ถ้าไม่มีถัดไปจึงย้อนไปเซสชันเก่า) ส่วนรายการจ่ายที่ไม่ระบุ for ตัดเซสชันเก่าสุดก่อน
 const perSession=p=>{const pays=p.payments||[],direct={};
   const rows=dedupe(p.sessions||[]).sort((a,b)=>sDate(a)<sDate(b)?-1:sDate(a)>sDate(b)?1:0)
-    .map(s=>({date:sDate(s),price:sPrice(p,s),note:typeof s==='string'?'':(s.note||''),paid:0}));
+    .map((s,i)=>({num:i+1,date:sDate(s),price:sPrice(p,s),note:typeof s==='string'?'':(s.note||''),paid:0}));
   const idx=new Map(rows.map((r,i)=>[r.date,i]));
   pays.forEach(x=>{if(x.for)direct[x.for]=(direct[x.for]||0)+x.amount+(x.discount||0)});
   const flow=(from,amt)=>{const order=[];
@@ -240,7 +241,7 @@ function showAdmin(d){
       dt.append(h('small',null,'เล่น '+p.sessions.length+' เซสชัน · ชำระ '+nPaid(p)+' ครั้ง รวม '+money(p.paid)));
       const ss=perSession(p),un=ss.filter(x=>x.owed>0),ok=ss.filter(x=>x.owed<=0);
       const chips=(list,cls)=>{const w=h('div','chips');list.forEach(x=>{
-        const t=fmt(x.date)+(x.price===0?' · ฟรี':x.price!==p.rate?' ['+money(x.price)+']':'')+(cls==='owe'&&x.paid>0?' · เหลือ '+money(x.owed):'');
+        const t='#'+x.num+' · '+fmt(x.date)+(x.price===0?' · ฟรี':x.price!==p.rate?' ['+money(x.price)+']':'')+(cls==='owe'&&x.paid>0?' · เหลือ '+money(x.owed):'');
         w.append(h('span','chip '+(x.price===0?'free':cls),t))});return w};
       if(un.length)dt.append(h('div','grp','รอชำระ ('+un.length+')'),chips(un,'owe'));
       if(ok.length)dt.append(h('div','grp','ชำระแล้ว ('+ok.length+')'),chips(ok,'ok'));
