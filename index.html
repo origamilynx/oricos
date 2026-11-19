@@ -55,15 +55,17 @@ li:last-child{border:0}
 .show{display:flex;gap:8px;align-items:center;color:var(--mut);margin:-4px 0 12px;font-size:.9rem}.show input{width:auto;margin:0}
 .status small{display:block;font-size:.8rem;margin-top:6px;opacity:.85}
 
-/* สไตล์เพิ่มเติมสำหรับ Dropdown QR code */
-.pay-qr{border:1px solid var(--line);border-radius:8px;background:#0d0a0a;overflow:hidden;margin-bottom:20px}
-.pay-qr summary{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:#1a0e10;color:#ff7b84;font-weight:600;margin:0;list-style:none}
-.pay-qr summary::-webkit-details-marker{display:none}
-.pay-qr summary::after{content:"▼";font-size:.8rem;transition:transform .2s;color:var(--mut)}
-.pay-qr[open] summary::after{content:"▲";color:#ff7b84}
-.qr-container{padding:16px;text-align:center}
-.qr-img{width:220px;height:auto;border:4px solid #fff;border-radius:6px;margin:0 auto 10px;display:block}
-.qr-container p{margin:4px 0 0;font-size:.8rem;color:var(--mut)}
+/* ปุ่มและ Modal ขยายภาพ QR Code */
+.pay-btn{background:#1a0e10;border:1px solid var(--line);color:#ff7b84;margin-bottom:20px;transition:background .2s,border-color .2s,transform .15s}
+.pay-btn:hover{background:#2a0b0e;border-color:var(--red)}
+.pay-btn:active{transform:scale(.98)}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.85);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:20px;z-index:999;animation:fadeIn .2s ease}
+.modal.hide{display:none}
+.modal-box{background:var(--card);border:1px solid var(--red);border-radius:12px;padding:20px;max-width:380px;width:100%;text-align:center;box-shadow:0 0 40px #b3141f66;animation:popIn .22s cubic-bezier(.16,1,.3,1)}
+.qr-large{width:100%;max-width:320px;height:auto;border:6px solid #fff;border-radius:8px;display:block;margin:0 auto 12px}
+.modal-box p{margin:0 0 12px;font-size:.85rem;color:var(--mut)}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes popIn{from{transform:scale(.88);opacity:0}to{transform:scale(1);opacity:1}}
 </style>
 </head>
 <body>
@@ -84,19 +86,8 @@ li:last-child{border:0}
     <p class="name" id="vName"></p>
     <p class="tbl" id="vTable"></p>
     <div class="status" id="vStatus"></div>
-    
-    <!-- 📍 ส่วน dropdown QR code ที่เพิ่มเข้ามาใหม่ -->
-    <details class="pay-qr">
-      <summary>
-        <span>สแกนเพื่อชำระเงิน (Scan to Pay)</span>
-      </summary>
-      <div class="qr-container">
-        <!-- ⚠️ อย่าลืมแก้ "qr-code.png" ให้เป็นชื่อไฟล์ภาพ QR code ของคุณเอง -->
-        <img src="qr-code.jpg" alt="QR Code" class="qr-img">
-        <p>ชื่อบัญชี: <b>Lynx's</b></p>
-        <p style="font-size:.72rem;opacity:.8;margin-top:8px">สแกนด้วยแอปธนาคารเพื่อชำระเงิน จากนั้นโปรดส่งสลิปให้แอดมิน</p>
-      </div>
-    </details>
+
+    <button type="button" class="pay-btn" id="openQr">สแกนเพื่อชำระเงิน (Scan to Pay)</button>
 
     <div class="stats">
       <div><b id="vSess">0</b><span>เซสชันที่เล่น</span></div>
@@ -116,9 +107,15 @@ li:last-child{border:0}
   <div id="dashBody"></div>
   <button class="ghost" id="out2">ออกจากระบบ</button>
 </section>
-
-
 </main>
+
+<!-- หน้าต่างป๊อปอัปแสดง QR Code ขนาดใหญ่ -->
+<div id="qrModal" class="modal hide">
+  <div class="modal-box">
+    <img src="qr-code.jpg" alt="QR Code" class="qr-large">
+    <button type="button" class="ghost" id="closeQr">ปิดหน้าต่าง</button>
+  </div>
+</div>
 
 <script>
 const enc=new TextEncoder(),dec=new TextDecoder(),SALT='barovia-ledger-v1';
@@ -188,7 +185,6 @@ function show(d){
 
 const sDate=s=>typeof s==='string'?s:s.date;
 const sPrice=(p,s)=>(typeof s==='string'||s.price==null)?p.rate:+s.price;
-// วันที่ซ้ำ: นับครั้งเดียว ถ้ามีทั้งแบบข้อความและแบบมีราคา/หมายเหตุ ใช้แบบหลัง
 const dedupe=l=>{const m=new Map();(l||[]).forEach(s=>{if(s==null)return;const d=sDate(s);if(!m.has(d)||typeof s!=='string')m.set(d,s)});return[...m.values()]};
 const calc=p=>{const paid=p.payments.reduce((t,x)=>t+(+x.amount||0),0),disc=p.payments.reduce((t,x)=>t+(+x.discount||0),0),billed=p.sessions.reduce((t,s)=>t+sPrice(p,s),0);return{paid,disc,billed,owed:billed-paid-disc}};
 const payAmt=x=>(x.amount>0?'฿'+baht(x.amount):'')+(x.discount?(x.amount>0?' + ':'')+'ส่วนลด ฿'+baht(x.discount):'')+(x.note?' · '+x.note:'');
@@ -212,10 +208,6 @@ function clean(p,issues){
     return{...x,amount:a,discount:dsc}});
   return{...p,rate,sessions:ss,payments:pays};
 }
-// ตัดยอดที่จ่ายไปปิดเซสชันเก่าสุดก่อน
-// จ่ายระบุวันที่ (for) ตัดเซสชันนั้นตรงๆ ส่วนที่เหลือตัดเซสชันเก่าสุดก่อน
-// จ่ายระบุเซสชัน (for) ตัดเซสชันนั้นก่อน ยอดเกินไหลไปตัดเซสชัน "ถัดไป" ที่ยังค้าง
-// (ถ้าไม่มีถัดไปจึงย้อนไปเซสชันเก่า) ส่วนรายการจ่ายที่ไม่ระบุ for ตัดเซสชันเก่าสุดก่อน
 const perSession=p=>{const pays=p.payments||[],direct={};
   const rows=dedupe(p.sessions||[]).sort((a,b)=>sDate(a)<sDate(b)?-1:sDate(a)>sDate(b)?1:0)
     .map((s,i)=>({num:i+1,date:sDate(s),price:sPrice(p,s),note:typeof s==='string'?'':(s.note||''),paid:0}));
@@ -278,12 +270,15 @@ function showAdmin(d){
     root.append(c);
   });
 }
-const logout=()=>{$('u').value=$('p').value='';['view','dash'].forEach(i=>$(i).classList.add('hide'));$('login').classList.remove('hide');document.querySelector('main').style.maxWidth=''};
+const logout=()=>{$('u').value=$('p').value='';['view','dash','qrModal'].forEach(i=>$(i).classList.add('hide'));$('login').classList.remove('hide');document.querySelector('main').style.maxWidth=''};
 $('sp').onchange=e=>{$('p').type=e.target.checked?'text':'password'};
 $('go').onclick=login;
 $('p').onkeydown=e=>{if(e.key==='Enter')login()};
 $('out').onclick=$('out2').onclick=logout;
-
+$('openQr').onclick=()=>$('qrModal').classList.remove('hide');
+$('closeQr').onclick=()=>$('qrModal').classList.add('hide');
+$('qrModal').onclick=e=>{if(e.target===$('qrModal'))$('qrModal').classList.add('hide')};
+document.onkeydown=e=>{if(e.key==='Escape')$('qrModal').classList.add('hide')};
 </script>
 </body>
 </html>
