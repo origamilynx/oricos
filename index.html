@@ -189,16 +189,24 @@ function clean(p,issues){
 }
 // ตัดยอดที่จ่ายไปปิดเซสชันเก่าสุดก่อน
 // จ่ายระบุวันที่ (for) ตัดเซสชันนั้นตรงๆ ส่วนที่เหลือตัดเซสชันเก่าสุดก่อน
-// ยอดเกินราคา (หรือจ่ายให้วันที่ไม่มีเซสชัน) ไหลไปตัดเซสชันเก่าสุดที่ยังค้าง ให้ผลรวมตรงกับยอดค้างรวม
+// จ่ายระบุเซสชัน (for) ตัดเซสชันนั้นก่อน ยอดเกินไหลไปตัดเซสชัน "ถัดไป" ที่ยังค้าง
+// (ถ้าไม่มีถัดไปจึงย้อนไปเซสชันเก่า) ส่วนรายการจ่ายที่ไม่ระบุ for ตัดเซสชันเก่าสุดก่อน
 const perSession=p=>{const pays=p.payments||[],direct={};
-  const ses=dedupe(p.sessions||[]).sort((a,b)=>sDate(a)<sDate(b)?-1:sDate(a)>sDate(b)?1:0);
+  const rows=dedupe(p.sessions||[]).sort((a,b)=>sDate(a)<sDate(b)?-1:sDate(a)>sDate(b)?1:0)
+    .map(s=>({date:sDate(s),price:sPrice(p,s),note:typeof s==='string'?'':(s.note||''),paid:0}));
+  const idx=new Map(rows.map((r,i)=>[r.date,i]));
   pays.forEach(x=>{if(x.for)direct[x.for]=(direct[x.for]||0)+x.amount+(x.discount||0)});
-  const have=new Set(ses.map(sDate));
-  let left=pays.filter(x=>!x.for).reduce((t,x)=>t+x.amount+(x.discount||0),0)
-    +Object.keys(direct).filter(d=>!have.has(d)).reduce((t,d)=>t+direct[d],0);
-  const rows=ses.map(s=>{const date=sDate(s),price=sPrice(p,s),d=direct[date]||0;left+=Math.max(0,d-price);
-    return{date,price,note:typeof s==='string'?'':(s.note||''),paid:Math.min(d,price)}});
-  rows.forEach(r=>{const t=Math.min(left,r.price-r.paid);r.paid+=t;left-=t;r.owed=r.price-r.paid});
+  const flow=(from,amt)=>{const order=[];
+    for(let i=from+1;i<rows.length;i++)order.push(i);
+    for(let i=0;i<=Math.min(from,rows.length-1);i++)order.push(i);
+    for(const i of order){if(amt<=0)break;const t=Math.min(amt,rows[i].price-rows[i].paid);rows[i].paid+=t;amt-=t}};
+  const excess=[];
+  Object.keys(direct).forEach(d=>{const i=idx.has(d)?idx.get(d):-1,v=direct[d];
+    if(i<0){excess.push([-1,v]);return}
+    const t=Math.min(v,rows[i].price);rows[i].paid=t;if(v>t)excess.push([i,v-t])});
+  excess.sort((a,b)=>a[0]-b[0]).forEach(([i,v])=>flow(i,v));
+  flow(-1,pays.filter(x=>!x.for).reduce((t,x)=>t+x.amount+(x.discount||0),0));
+  rows.forEach(r=>r.owed=r.price-r.paid);
   return rows};
 function showAdmin(d){
   $('login').classList.add('hide');$('dash').classList.remove('hide');
