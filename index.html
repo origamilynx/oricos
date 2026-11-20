@@ -118,6 +118,8 @@ li:last-child{border:0}
 <div id="qrModal" class="modal hide">
   <div class="modal-box">
     <img src="qr-code.jpg" alt="QR Code" class="qr-large">
+    <p id="qrHint">บันทึกรูปแล้วเปิดแอปธนาคาร เลือกสแกนจากรูปในอัลบั้ม</p>
+    <button type="button" id="saveQr" style="margin-bottom:8px">บันทึกรูป QR</button>
     <button type="button" class="ghost" id="closeQr">ปิดหน้าต่าง</button>
   </div>
 </div>
@@ -282,7 +284,18 @@ $('sp').onchange=e=>{$('p').type=e.target.checked?'text':'password'};
 $('go').onclick=login;
 $('p').onkeydown=e=>{if(e.key==='Enter')login()};
 $('out').onclick=$('out2').onclick=logout;
-$('openQr').onclick=()=>$('qrModal').classList.remove('hide');
+$('openQr').onclick=()=>{$('qrHint').textContent='บันทึกรูปแล้วเปิดแอปธนาคาร เลือกสแกนจากรูปในอัลบั้ม';$('qrModal').classList.remove('hide')};
+// มือถือ: เปิดเมนูแชร์ (มีปุ่ม "บันทึกรูปภาพ") / คอมพิวเตอร์: ดาวน์โหลดไฟล์
+$('saveQr').onclick=async()=>{
+  const name='qr-code.jpg';
+  try{
+    const blob=await (await fetch(name)).blob(),file=new File([blob],name,{type:blob.type||'image/jpeg'});
+    const touch=window.matchMedia&&matchMedia('(pointer:coarse)').matches;
+    if(touch&&navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file],title:'QR ชำระเงิน'});return}
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;
+    document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+  }catch(e){if(e&&e.name==='AbortError')return;$('qrHint').textContent='บันทึกอัตโนมัติไม่ได้ ให้กดค้างที่รูป QR แล้วเลือก "บันทึกรูปภาพ"'}
+};
 $('closeQr').onclick=()=>$('qrModal').classList.add('hide');
 $('qrModal').onclick=e=>{if(e.target===$('qrModal'))$('qrModal').classList.add('hide')};
 document.onkeydown=e=>{if(e.key==='Escape')$('qrModal').classList.add('hide')};
