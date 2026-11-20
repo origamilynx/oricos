@@ -51,7 +51,12 @@ li:last-child{border:0}
 .chip.ok{color:#9ccf86;border-color:#2c4a22;background:#12200f}
 .chip.owe{color:#ff7b84;border-color:#5a1a20;background:#2a0b0e}
 .chip.free{color:var(--mut);border-color:var(--line)}
-.hist{margin-top:10px}.hist summary{color:var(--mut);font-size:.85rem}
+.hist{margin-top:10px}
+#vSessList li.sess{border:1px solid;border-radius:8px;padding:9px 12px;margin-bottom:6px}
+#vSessList li.sess.ok{border-color:#2c4a22;background:#12200f}
+#vSessList li.sess.owe{border-color:#5a1a20;background:#2a0b0e}
+#vSessList li.sess.free{border-color:var(--line)}
+#vSessList li.sess.free span:last-child{color:var(--mut)}.hist summary{color:var(--mut);font-size:.85rem}
 .show{display:flex;gap:8px;align-items:center;color:var(--mut);margin:-4px 0 12px;font-size:.9rem}.show input{width:auto;margin:0}
 .status small{display:block;font-size:.8rem;margin-top:6px;opacity:.85}
 
@@ -166,7 +171,8 @@ function show(d){
   if(!ss.length)sl.innerHTML='<li><span>ยังไม่มีเซสชัน</span></li>';
   [...ss].reverse().forEach(x=>{
     const li=document.createElement('li');li.innerHTML='<span></span><span></span>';
-    li.children[0].textContent='เซสชันที่ '+x.num+' · '+fmt(x.date)+' · ฿'+baht(x.price)+(x.note?' · '+x.note:'');
+    li.children[0].textContent='เซสชันที่ '+x.num+' · '+fmt(x.date)+' · ฿'+baht(x.price)+(x.note&&!(x.price===0&&x.note==='ฟรี')?' · '+x.note:'');
+    li.className='sess '+(x.price===0?'free':x.owed>0?'owe':'ok');
     const st=li.children[1];st.className=x.owed>0?'owe':'ok';
     st.textContent=x.price===0?'ฟรี':x.owed===0?'✓ ชำระแล้ว':'⧗ รอชำระ ฿'+baht(x.owed)+(x.paid>0?' (ชำระแล้ว ฿'+baht(x.paid)+')':'');
     sl.appendChild(li);
