@@ -314,14 +314,16 @@ const closeSlip=()=>{$('slipModal').classList.add('hide');$('slipImg').removeAtt
 async function viewSlip(s){
   const img=$('slipImg'),msg=$('slipMsg');
   img.removeAttribute('src');msg.textContent='กำลังโหลดสลิป…';$('slipModal').classList.remove('hide');
+  const path='slips/'+s.id+'.bin';let stage='fetch';
   try{
-    const r=await fetch('slips/'+s.id+'.bin',{cache:'no-store'});if(!r.ok)throw 0;
-    const buf=new Uint8Array(await r.arrayBuffer());if(buf.length<29)throw 0;
+    const r=await fetch(path,{cache:'no-store'});
+    if(!r.ok){msg.textContent='ไม่พบไฟล์ '+path+' บนเว็บ (HTTP '+r.status+') ตรวจว่าชื่อไฟล์/โฟลเดอร์ตรงกัน แล้วรอ GitHub Pages อัปเดตสัก 1-2 นาที';return}
+    const buf=new Uint8Array(await r.arrayBuffer());stage='decrypt';if(buf.length<29)throw 0;
     const k=await crypto.subtle.importKey('raw',unb64(s.k),'AES-GCM',false,['decrypt']);
     const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:buf.slice(0,12)},k,buf.slice(12));
     if(slipUrl)URL.revokeObjectURL(slipUrl);
     slipUrl=URL.createObjectURL(new Blob([pt],{type:'image/jpeg'}));img.src=slipUrl;msg.textContent='';
-  }catch(e){msg.textContent='โหลดสลิปไม่สำเร็จ (ไฟล์อาจยังไม่ได้อัปโหลดขึ้น GitHub)'}
+  }catch(e){msg.textContent=stage==='fetch'?'เชื่อมต่อไม่ได้ ลองใหม่อีกครั้ง':'ถอดรหัสสลิปไม่สำเร็จ ('+path+') ไฟล์อาจเสียหรือไม่ตรงกับ data.json ให้อัปโหลด data.json และไฟล์ .bin จาก zip ชุดเดียวกัน'}
 }
 const slipBtn=s=>{const b=document.createElement('button');b.type='button';b.className='slipbtn';b.textContent='🧾 สลิป';b.onclick=()=>viewSlip(s);return b};
 $('closeSlip').onclick=closeSlip;
