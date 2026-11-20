@@ -216,7 +216,7 @@ function clean(p,issues){
 }
 const perSession=p=>{const pays=p.payments||[],direct={};
   const rows=dedupe(p.sessions||[]).sort((a,b)=>sDate(a)<sDate(b)?-1:sDate(a)>sDate(b)?1:0)
-    .map((s,i)=>({num:i+1,date:sDate(s),price:sPrice(p,s),note:typeof s==='string'?'':(s.note||''),paid:0}));
+    .map((s,i)=>({num:(p.tableSessions&&p.tableSessions.includes(sDate(s)))?p.tableSessions.indexOf(sDate(s))+1:i+1,date:sDate(s),price:sPrice(p,s),note:typeof s==='string'?'':(s.note||''),paid:0}));
   const idx=new Map(rows.map((r,i)=>[r.date,i]));
   pays.forEach(x=>{if(x.for)direct[x.for]=(direct[x.for]||0)+x.amount+(x.discount||0)});
   const flow=(from,amt)=>{const order=[];
@@ -235,7 +235,8 @@ function showAdmin(d){
   $('login').classList.add('hide');$('dash').classList.remove('hide');
   document.querySelector('main').style.maxWidth='640px';
   const h=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e};
-  const issues=[],P=d.players.map(p=>{const c=clean(p,issues);return{...c,...calc(c)}});
+  const TS={};d.players.forEach(p=>{const st=TS[p.table]=TS[p.table]||new Set();(p.sessions||[]).forEach(s=>{if(s)st.add(sDate(s))})});
+  const issues=[],P=d.players.map(p=>{const c=clean(p,issues);return{...c,tableSessions:[...TS[c.table]].sort(),...calc(c)}});
   const sum=f=>P.reduce((t,p)=>t+f(p),0);
   const root=$('dashBody');root.innerHTML='';
   const grid=h('div','kpis');
