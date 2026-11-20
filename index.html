@@ -51,6 +51,8 @@ li:last-child{border:0}
 .chip.ok{color:#9ccf86;border-color:#2c4a22;background:#12200f}
 .chip.owe{color:#ff7b84;border-color:#5a1a20;background:#2a0b0e}
 .chip.free{color:var(--mut);border-color:var(--line)}
+.slipbtn{width:auto;padding:3px 10px;font-size:.78rem;margin-left:8px;background:#1a0e10;border:1px solid var(--line);color:#ff7b84;border-radius:6px;cursor:pointer}
+#slipImg{width:auto;max-width:100%;max-height:68vh;border-width:4px}
 .hist{margin-top:10px}
 #vSessList li.sess{border:1px solid;border-radius:8px;padding:9px 12px;margin-bottom:6px}
 #vSessList li.sess.ok{border-color:#2c4a22;background:#12200f}
@@ -124,6 +126,14 @@ li:last-child{border:0}
   </div>
 </div>
 
+<div id="slipModal" class="modal hide">
+  <div class="modal-box">
+    <img id="slipImg" class="qr-large" alt="สลิปโอนเงิน">
+    <p id="slipMsg"></p>
+    <button type="button" class="ghost" id="closeSlip">ปิดหน้าต่าง</button>
+  </div>
+</div>
+
 <script>
 const enc=new TextEncoder(),dec=new TextDecoder(),SALT='barovia-ledger-v1';
 const $=i=>document.getElementById(i);
@@ -185,7 +195,7 @@ function show(d){
     const li=document.createElement('li');
     li.innerHTML='<span></span><span></span>';
     li.children[0].textContent=fmt(x.date);
-    li.children[1].textContent=payAmt(x);
+    li.children[1].textContent=payAmt(x);if(x.slip)li.children[1].append(slipBtn(x.slip));
     l.appendChild(li);
   });
   $('login').classList.add('hide');$('view').classList.remove('hide');
@@ -272,14 +282,14 @@ function showAdmin(d){
       if(ok.length)dt.append(h('div','grp','ชำระแล้ว ('+ok.length+')'),chips(ok,'ok'));
       if(p.payments.length){const ph=h('details','hist'),ul=h('ul');
         ph.append(h('summary',null,'ประวัติการชำระ ('+p.payments.length+' รายการ)'));
-        p.payments.forEach(x=>{const li=h('li');li.append(h('span',null,fmt(x.date)),h('span',null,payAmt(x)));ul.append(li)});
+        p.payments.forEach(x=>{const li=h('li'),rt=h('span',null,payAmt(x));if(x.slip)rt.append(slipBtn(x.slip));li.append(h('span',null,fmt(x.date)),rt);ul.append(li)});
         ph.append(ul);dt.append(ph)}
       c.append(dt);
     });
     root.append(c);
   });
 }
-const logout=()=>{$('u').value=$('p').value='';['view','dash','qrModal'].forEach(i=>$(i).classList.add('hide'));$('login').classList.remove('hide');document.querySelector('main').style.maxWidth=''};
+const logout=()=>{$('u').value=$('p').value='';['view','dash','qrModal','slipModal'].forEach(i=>$(i).classList.add('hide'));$('login').classList.remove('hide');document.querySelector('main').style.maxWidth=''};
 $('sp').onchange=e=>{$('p').type=e.target.checked?'text':'password'};
 $('go').onclick=login;
 $('p').onkeydown=e=>{if(e.key==='Enter')login()};
@@ -298,7 +308,25 @@ $('saveQr').onclick=async()=>{
 };
 $('closeQr').onclick=()=>$('qrModal').classList.add('hide');
 $('qrModal').onclick=e=>{if(e.target===$('qrModal'))$('qrModal').classList.add('hide')};
-document.onkeydown=e=>{if(e.key==='Escape')$('qrModal').classList.add('hide')};
+// สลิป: ไฟล์ใน slips/ เข้ารหัสไว้ ถอดรหัสในเบราว์เซอร์ด้วยกุญแจที่อยู่ในข้อมูลของผู้ล็อกอินเท่านั้น
+let slipUrl=null;
+const closeSlip=()=>{$('slipModal').classList.add('hide');$('slipImg').removeAttribute('src')};
+async function viewSlip(s){
+  const img=$('slipImg'),msg=$('slipMsg');
+  img.removeAttribute('src');msg.textContent='กำลังโหลดสลิป…';$('slipModal').classList.remove('hide');
+  try{
+    const r=await fetch('slips/'+s.id+'.bin',{cache:'no-store'});if(!r.ok)throw 0;
+    const buf=new Uint8Array(await r.arrayBuffer());if(buf.length<29)throw 0;
+    const k=await crypto.subtle.importKey('raw',unb64(s.k),'AES-GCM',false,['decrypt']);
+    const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:buf.slice(0,12)},k,buf.slice(12));
+    if(slipUrl)URL.revokeObjectURL(slipUrl);
+    slipUrl=URL.createObjectURL(new Blob([pt],{type:'image/jpeg'}));img.src=slipUrl;msg.textContent='';
+  }catch(e){msg.textContent='โหลดสลิปไม่สำเร็จ (ไฟล์อาจยังไม่ได้อัปโหลดขึ้น GitHub)'}
+}
+const slipBtn=s=>{const b=document.createElement('button');b.type='button';b.className='slipbtn';b.textContent='🧾 สลิป';b.onclick=()=>viewSlip(s);return b};
+$('closeSlip').onclick=closeSlip;
+$('slipModal').onclick=e=>{if(e.target===$('slipModal'))closeSlip()};
+document.onkeydown=e=>{if(e.key==='Escape'){$('qrModal').classList.add('hide');closeSlip()}};
 </script>
 </body>
 </html>
